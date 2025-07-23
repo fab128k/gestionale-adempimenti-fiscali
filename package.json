@@ -2,10 +2,11 @@
   "name": "gestionale-adempimenti-fiscali",
   "version": "1.0.0",
   "description": "Applicazione per la gestione delle scadenze e adempimenti fiscali per studi di commercialisti",
+  "homepage": "https://fab128k.github.io/gestionale-adempimenti-fiscali",
   "private": true,
   "author": {
-    "name": "Il tuo nome",
-    "email": "tua@email.com"
+    "name": "Fabrizio Ferrari",
+    "email": "fabrizioferrari7@gmail.com"
   },
   "keywords": [
     "react",
@@ -25,6 +26,7 @@
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.0.0",
     "autoprefixer": "^10.4.14",
+    "gh-pages": "^5.0.0",
     "postcss": "^8.4.24",
     "tailwindcss": "^3.3.2",
     "vite": "^4.3.9"
@@ -33,7 +35,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
   },
   "eslintConfig": {
     "extends": [
