@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useReducer, useCallback } from 'react';
-import { Plus, Trash2, Edit3, Save, X, FileText, Calendar, Users, Download, Upload } from 'lucide-react';
+import { Plus, Trash2, Edit3, Save, X, FileText, Calendar, Users, Download, Upload, UserPlus } from 'lucide-react';
 
-// Tipi e costanti
+// ===== COSTANTI E CONFIGURAZIONE =====
 const STORAGE_KEY = 'gestionale-adempimenti-fiscali';
 
-const initialSheets = {
+const INITIAL_SHEETS = {
   'dichiarazioni_redditi_2024': {
     name: 'Dichiarazioni Redditi 2024',
     columns: [
@@ -60,31 +60,77 @@ const initialSheets = {
   }
 };
 
-// Reducer per gestire lo stato complesso
+const DEFAULT_CLIENTS = ['Mario Rossi SRL', 'Giuseppe Verdi SNC', 'Paola Bianchi'];
+
+// ===== UTILITY FUNCTIONS =====
+const showAlert = (message) => alert(message);
+const showConfirm = (message) => window.confirm(message);
+
+const resetFileInput = (event) => {
+  event.target.value = '';
+};
+
+const createFileName = (prefix) => {
+  const date = new Date().toISOString().split('T')[0];
+  return `${prefix}_${date}.json`;
+};
+
+const downloadJSON = (data, fileName) => {
+  const dataStr = JSON.stringify(data, null, 2);
+  const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+  
+  const linkElement = document.createElement('a');
+  linkElement.setAttribute('href', dataUri);
+  linkElement.setAttribute('download', fileName);
+  linkElement.click();
+};
+
+const sanitizeKey = (name) => {
+  return name.toLowerCase().replace(/\s+/g, '_');
+};
+
+const isValidClient = (client) => {
+  return client && typeof client === 'string' && client.trim();
+};
+
+// ===== REDUCER =====
 const dataReducer = (state, action) => {
   switch (action.type) {
     case 'INIT_DATA':
       return action.payload;
       
-    case 'ADD_CLIENT':
+    case 'ADD_CLIENT': {
       const newState = { ...state };
       newState.clients.push(action.payload);
-      // Inizializza i dati per il nuovo cliente in tutti i fogli
       Object.keys(newState.sheets).forEach(sheetKey => {
         newState.sheets[sheetKey].data[action.payload] = {};
       });
       return newState;
+    }
+
+    case 'ADD_MULTIPLE_CLIENTS': {
+      const multiClientState = { ...state };
+      action.payload.forEach(client => {
+        if (!multiClientState.clients.includes(client)) {
+          multiClientState.clients.push(client);
+          Object.keys(multiClientState.sheets).forEach(sheetKey => {
+            multiClientState.sheets[sheetKey].data[client] = {};
+          });
+        }
+      });
+      return multiClientState;
+    }
       
-    case 'REMOVE_CLIENT':
+    case 'REMOVE_CLIENT': {
       const updatedState = { ...state };
       updatedState.clients = updatedState.clients.filter(c => c !== action.payload);
-      // Rimuovi i dati del cliente da tutti i fogli
       Object.keys(updatedState.sheets).forEach(sheetKey => {
         delete updatedState.sheets[sheetKey].data[action.payload];
       });
       return updatedState;
+    }
       
-    case 'ADD_SHEET':
+    case 'ADD_SHEET': {
       const { key, name } = action.payload;
       const stateWithNewSheet = { ...state };
       stateWithNewSheet.sheets[key] = {
@@ -92,18 +138,19 @@ const dataReducer = (state, action) => {
         columns: ['Cliente', 'Stato', 'Note'],
         data: {}
       };
-      // Inizializza i dati per tutti i clienti
       state.clients.forEach(client => {
         stateWithNewSheet.sheets[key].data[client] = {};
       });
       return stateWithNewSheet;
+    }
       
-    case 'REMOVE_SHEET':
+    case 'REMOVE_SHEET': {
       const stateWithoutSheet = { ...state };
       delete stateWithoutSheet.sheets[action.payload];
       return stateWithoutSheet;
+    }
       
-    case 'UPDATE_CELL':
+    case 'UPDATE_CELL': {
       const { sheetKey, client, column, value } = action.payload;
       const cellUpdatedState = { ...state };
       if (!cellUpdatedState.sheets[sheetKey].data[client]) {
@@ -111,30 +158,31 @@ const dataReducer = (state, action) => {
       }
       cellUpdatedState.sheets[sheetKey].data[client][column] = value;
       return cellUpdatedState;
+    }
       
-    case 'ADD_COLUMN':
+    case 'ADD_COLUMN': {
       const { sheetKey: sheet, columnName } = action.payload;
       const columnAddedState = { ...state };
       columnAddedState.sheets[sheet].columns.push(columnName);
       return columnAddedState;
+    }
       
-    case 'REMOVE_COLUMN':
+    case 'REMOVE_COLUMN': {
       const { sheetKey: sheetToUpdate, columnIndex } = action.payload;
       const columnRemovedState = { ...state };
       const columnToRemove = columnRemovedState.sheets[sheetToUpdate].columns[columnIndex];
       columnRemovedState.sheets[sheetToUpdate].columns.splice(columnIndex, 1);
-      // Rimuovi i dati della colonna
       Object.keys(columnRemovedState.sheets[sheetToUpdate].data).forEach(client => {
         delete columnRemovedState.sheets[sheetToUpdate].data[client][columnToRemove];
       });
       return columnRemovedState;
+    }
       
-    case 'UPDATE_COLUMN_NAME':
+    case 'UPDATE_COLUMN_NAME': {
       const { sheetKey: sheetForColumn, oldName, newName } = action.payload;
       const columnUpdatedState = { ...state };
       const colIndex = columnUpdatedState.sheets[sheetForColumn].columns.indexOf(oldName);
       columnUpdatedState.sheets[sheetForColumn].columns[colIndex] = newName;
-      // Aggiorna i dati
       Object.keys(columnUpdatedState.sheets[sheetForColumn].data).forEach(client => {
         if (columnUpdatedState.sheets[sheetForColumn].data[client][oldName] !== undefined) {
           columnUpdatedState.sheets[sheetForColumn].data[client][newName] = 
@@ -143,13 +191,14 @@ const dataReducer = (state, action) => {
         }
       });
       return columnUpdatedState;
+    }
       
     default:
       return state;
   }
 };
 
-// Componenti riutilizzabili
+// ===== COMPONENTI RIUTILIZZABILI =====
 const SaveCancelButtons = ({ onSave, onCancel, saveDisabled = false }) => (
   <>
     <button
@@ -197,11 +246,54 @@ const EditableInput = ({ value, onSave, onCancel, placeholder, className = "" })
   );
 };
 
-// Componente principale
+const ActionButton = ({ onClick, color, icon: Icon, text, title }) => {
+  const colorClasses = {
+    blue: 'bg-blue-600 hover:bg-blue-700',
+    green: 'bg-green-600 hover:bg-green-700',
+    purple: 'bg-purple-600 hover:bg-purple-700',
+    orange: 'bg-orange-600 hover:bg-orange-700',
+    red: 'bg-red-600 hover:bg-red-700',
+    gray: 'bg-gray-400 hover:bg-gray-500'
+  };
+  
+  return (
+    <button
+      onClick={onClick}
+      className={`${colorClasses[color]} text-white px-3 py-2 rounded-md flex items-center gap-2 text-sm`}
+      title={title}
+    >
+      <Icon size={16} />
+      {text}
+    </button>
+  );
+};
+
+const FileInputButton = ({ onChange, color, icon: Icon, text, title }) => {
+  const colorClasses = {
+    blue: 'bg-blue-600 hover:bg-blue-700',
+    orange: 'bg-orange-600 hover:bg-orange-700'
+  };
+  
+  return (
+    <label className={`${colorClasses[color]} text-white px-3 py-2 rounded-md flex items-center gap-2 text-sm cursor-pointer`}>
+      <Icon size={16} />
+      {text}
+      <input
+        type="file"
+        accept=".json"
+        onChange={onChange}
+        className="hidden"
+        title={title}
+      />
+    </label>
+  );
+};
+
+// ===== COMPONENTE PRINCIPALE =====
 const GestionaleAdempimenti = () => {
   const [state, dispatch] = useReducer(dataReducer, {
     clients: [],
-    sheets: initialSheets
+    sheets: INITIAL_SHEETS
   });
   
   const [activeSheet, setActiveSheet] = useState('dichiarazioni_redditi_2024');
@@ -211,7 +303,7 @@ const GestionaleAdempimenti = () => {
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [showAddColumn, setShowAddColumn] = useState(false);
 
-  // Carica dati dal localStorage
+  // Carica dati dal localStorage o inizializza con dati di esempio
   useEffect(() => {
     const savedData = localStorage.getItem(STORAGE_KEY);
     if (savedData) {
@@ -220,22 +312,20 @@ const GestionaleAdempimenti = () => {
         dispatch({ type: 'INIT_DATA', payload: parsedData });
       } catch (error) {
         console.error('Errore nel caricamento dei dati:', error);
-        // Inizializza con dati di esempio se il caricamento fallisce
         dispatch({ 
           type: 'INIT_DATA', 
           payload: {
-            clients: ['Mario Rossi SRL', 'Giuseppe Verdi SNC', 'Paola Bianchi'],
-            sheets: initialSheets
+            clients: DEFAULT_CLIENTS,
+            sheets: INITIAL_SHEETS
           }
         });
       }
     } else {
-      // Prima volta: inizializza con dati di esempio
       dispatch({ 
         type: 'INIT_DATA', 
         payload: {
-          clients: ['Mario Rossi SRL', 'Giuseppe Verdi SNC', 'Paola Bianchi'],
-          sheets: initialSheets
+          clients: DEFAULT_CLIENTS,
+          sheets: INITIAL_SHEETS
         }
       });
     }
@@ -248,10 +338,10 @@ const GestionaleAdempimenti = () => {
     }
   }, [state]);
 
-  // Gestione clienti
+  // ===== GESTIONE CLIENTI =====
   const addClient = (clientName) => {
     if (state.clients.includes(clientName)) {
-      alert('Cliente già esistente!');
+      showAlert('Cliente già esistente!');
       return;
     }
     dispatch({ type: 'ADD_CLIENT', payload: clientName });
@@ -259,16 +349,16 @@ const GestionaleAdempimenti = () => {
   };
 
   const removeClient = (client) => {
-    if (window.confirm(`Sei sicuro di voler eliminare il cliente "${client}"? Questa azione eliminerà tutti i suoi dati.`)) {
+    if (showConfirm(`Sei sicuro di voler eliminare il cliente "${client}"? Questa azione eliminerà tutti i suoi dati.`)) {
       dispatch({ type: 'REMOVE_CLIENT', payload: client });
     }
   };
 
-  // Gestione fogli
+  // ===== GESTIONE FOGLI =====
   const addSheet = (sheetName) => {
-    const sheetKey = sheetName.toLowerCase().replace(/\s+/g, '_');
+    const sheetKey = sanitizeKey(sheetName);
     if (state.sheets[sheetKey]) {
-      alert('Esiste già un foglio con questo nome!');
+      showAlert('Esiste già un foglio con questo nome!');
       return;
     }
     dispatch({ type: 'ADD_SHEET', payload: { key: sheetKey, name: sheetName } });
@@ -278,10 +368,10 @@ const GestionaleAdempimenti = () => {
 
   const removeSheet = (sheetKey) => {
     if (Object.keys(state.sheets).length <= 1) {
-      alert('Deve rimanere almeno un foglio!');
+      showAlert('Deve rimanere almeno un foglio!');
       return;
     }
-    if (window.confirm(`Sei sicuro di voler eliminare il foglio "${state.sheets[sheetKey].name}"?`)) {
+    if (showConfirm(`Sei sicuro di voler eliminare il foglio "${state.sheets[sheetKey].name}"?`)) {
       dispatch({ type: 'REMOVE_SHEET', payload: sheetKey });
       if (activeSheet === sheetKey) {
         setActiveSheet(Object.keys(state.sheets)[0]);
@@ -289,7 +379,7 @@ const GestionaleAdempimenti = () => {
     }
   };
 
-  // Gestione celle
+  // ===== GESTIONE CELLE =====
   const updateCell = useCallback((sheetKey, client, column, value) => {
     dispatch({ 
       type: 'UPDATE_CELL', 
@@ -298,11 +388,11 @@ const GestionaleAdempimenti = () => {
     setEditingCell(null);
   }, []);
 
-  // Gestione colonne
+  // ===== GESTIONE COLONNE =====
   const addColumn = (columnName) => {
     const currentColumns = state.sheets[activeSheet].columns;
     if (currentColumns.includes(columnName)) {
-      alert('Colonna già esistente!');
+      showAlert('Colonna già esistente!');
       return;
     }
     dispatch({ 
@@ -314,11 +404,11 @@ const GestionaleAdempimenti = () => {
 
   const removeColumn = (columnIndex) => {
     if (columnIndex === 0) {
-      alert('La colonna Cliente non può essere eliminata!');
+      showAlert('La colonna Cliente non può essere eliminata!');
       return;
     }
     const columnName = state.sheets[activeSheet].columns[columnIndex];
-    if (window.confirm(`Sei sicuro di voler eliminare la colonna "${columnName}"?`)) {
+    if (showConfirm(`Sei sicuro di voler eliminare la colonna "${columnName}"?`)) {
       dispatch({ 
         type: 'REMOVE_COLUMN', 
         payload: { sheetKey: activeSheet, columnIndex } 
@@ -328,11 +418,11 @@ const GestionaleAdempimenti = () => {
 
   const updateColumnName = (oldName, newName) => {
     if (oldName === 'Cliente') {
-      alert('Il nome della colonna Cliente non può essere modificato!');
+      showAlert('Il nome della colonna Cliente non può essere modificato!');
       return;
     }
     if (state.sheets[activeSheet].columns.includes(newName) && newName !== oldName) {
-      alert('Esiste già una colonna con questo nome!');
+      showAlert('Esiste già una colonna con questo nome!');
       return;
     }
     dispatch({ 
@@ -342,42 +432,89 @@ const GestionaleAdempimenti = () => {
     setEditingColumn(null);
   };
 
-  // Export/Import
+  // ===== EXPORT FUNCTIONS =====
   const exportData = () => {
-    const dataStr = JSON.stringify(state, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    const exportFileDefaultName = `gestionale_fiscale_${new Date().toISOString().split('T')[0]}.json`;
-    
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
+    downloadJSON(state, createFileName('gestionale_fiscale'));
   };
 
-  const importData = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const importedData = JSON.parse(e.target.result);
-          if (importedData.clients && importedData.sheets) {
-            dispatch({ type: 'INIT_DATA', payload: importedData });
-            alert('Dati importati con successo!');
-          } else {
-            alert('Formato file non valido!');
-          }
-        } catch (error) {
-          alert('Errore nell\'importazione del file!');
-        }
-      };
-      reader.readAsText(file);
+  const exportClients = () => {
+    downloadJSON({ clients: state.clients }, createFileName('clienti'));
+  };
+
+  // ===== IMPORT FUNCTIONS =====
+  const parseImportedClients = (data) => {
+    // Supporta sia {"clients": [...]} che array diretto [...]
+    if (data.clients && Array.isArray(data.clients)) {
+      return data.clients;
+    } else if (Array.isArray(data)) {
+      return data;
     }
+    return null;
+  };
+
+  const importCompleteData = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const importedData = JSON.parse(e.target.result);
+        
+        if (importedData.clients && importedData.sheets) {
+          if (showConfirm('Questa operazione sostituirà tutti i dati esistenti. Continuare?')) {
+            dispatch({ type: 'INIT_DATA', payload: importedData });
+            showAlert('Dati completi importati con successo!');
+          }
+        } else {
+          showAlert('File non valido! Per l\'importazione completa il file deve contenere: {"clients": [...], "sheets": {...}}');
+        }
+      } catch (error) {
+        showAlert('Errore nell\'importazione del file! Verifica che sia un JSON valido.');
+      }
+    };
+    reader.readAsText(file);
+    resetFileInput(event);
+  };
+
+  const importClientsOnly = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const importedData = JSON.parse(e.target.result);
+        const clientsToAdd = parseImportedClients(importedData);
+        
+        if (!clientsToAdd) {
+          showAlert('Formato file non valido per l\'importazione clienti!\nFormati supportati:\n- {"clients": ["Cliente1", "Cliente2", ...]}\n- ["Cliente1", "Cliente2", ...]');
+          return;
+        }
+        
+        // Filtra clienti validi e non duplicati
+        const newClients = clientsToAdd
+          .filter(client => isValidClient(client) && !state.clients.includes(client.trim()))
+          .map(client => client.trim());
+        
+        if (newClients.length > 0) {
+          dispatch({ type: 'ADD_MULTIPLE_CLIENTS', payload: newClients });
+          showAlert(`${newClients.length} nuovi clienti importati con successo!`);
+        } else {
+          showAlert('Nessun nuovo cliente da importare (tutti già presenti o non validi).');
+        }
+      } catch (error) {
+        showAlert('Errore nell\'importazione del file! Verifica che sia un JSON valido.');
+      }
+    };
+    reader.readAsText(file);
+    resetFileInput(event);
   };
 
   const currentSheet = state.sheets[activeSheet];
   if (!currentSheet) return null;
 
+  // ===== RENDER =====
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-7xl mx-auto">
@@ -400,24 +537,34 @@ const GestionaleAdempimenti = () => {
                 <Calendar size={16} />
                 {Object.keys(state.sheets).length} adempimenti
               </div>
-              <button
+              <ActionButton
                 onClick={exportData}
-                className="bg-green-600 text-white px-3 py-2 rounded-md hover:bg-green-700 flex items-center gap-2 text-sm"
-                title="Esporta dati"
-              >
-                <Download size={16} />
-                Esporta
-              </button>
-              <label className="bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 text-sm cursor-pointer">
-                <Upload size={16} />
-                Importa
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={importData}
-                  className="hidden"
-                />
-              </label>
+                color="green"
+                icon={Download}
+                text="Esporta Tutto"
+                title="Esporta tutti i dati (clienti + fogli)"
+              />
+              <ActionButton
+                onClick={exportClients}
+                color="purple"
+                icon={UserPlus}
+                text="Esporta Clienti"
+                title="Esporta solo la lista clienti"
+              />
+              <FileInputButton
+                onChange={importCompleteData}
+                color="blue"
+                icon={Upload}
+                text="Importa"
+                title="Importa file completo (sostituisce tutti i dati)"
+              />
+              <FileInputButton
+                onChange={importClientsOnly}
+                color="orange"
+                icon={UserPlus}
+                text="Importa Clienti"
+                title="Importa solo clienti (aggiunge ai dati esistenti)"
+              />
             </div>
           </div>
         </div>
@@ -611,6 +758,32 @@ const GestionaleAdempimenti = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        {/* Info Box */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+          <h3 className="text-sm font-semibold text-blue-800 mb-2">💡 Guida Import/Export:</h3>
+          <div className="text-xs text-blue-700 space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <strong className="text-blue-800">📤 Export:</strong>
+                <div className="mt-1 space-y-1">
+                  <div>• <strong>Esporta Tutto:</strong> Backup completo</div>
+                  <div>• <strong>Esporta Clienti:</strong> Solo lista clienti</div>
+                </div>
+              </div>
+              <div>
+                <strong className="text-blue-800">📥 Import:</strong>
+                <div className="mt-1 space-y-1">
+                  <div>• <strong>Importa:</strong> File completo (sostituisce tutto)</div>
+                  <div>• <strong>Importa Clienti:</strong> Aggiunge clienti esistenti</div>
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-blue-200 pt-2 mt-2">
+              <strong>Formati clienti supportati:</strong> {`{"clients": [...]}`} o {`[...]`}
+            </div>
           </div>
         </div>
 
