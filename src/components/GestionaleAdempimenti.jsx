@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useReducer, useCallback } from 'react';
-import { Plus, Trash2, Edit3, Save, X, FileText, Calendar, Users, Download, Upload, UserPlus } from 'lucide-react';
+import { Plus, Trash2, Edit3, Save, X, FileText, Calendar, Users, Download, Upload, Search, Copy, Check, Building2, MapPin, Phone, Mail, FileCheck } from 'lucide-react';
 
 // ===== COSTANTI E CONFIGURAZIONE =====
 const STORAGE_KEY = 'gestionale-adempimenti-fiscali';
@@ -60,37 +60,104 @@ const INITIAL_SHEETS = {
   }
 };
 
-const DEFAULT_CLIENTS = ['Mario Rossi SRL', 'Giuseppe Verdi SNC', 'Paola Bianchi'];
+// Template anagrafica cliente
+const EMPTY_CLIENT = {
+  denominazione: '',
+  tipo: 'persona_fisica', // persona_fisica, societa, altro
+  codiceFiscale: '',
+  partitaIva: '',
+  indirizzo: '',
+  cap: '',
+  citta: '',
+  provincia: '',
+  telefono: '',
+  email: '',
+  pec: '',
+  note: ''
+};
 
 // ===== UTILITY FUNCTIONS =====
-const showAlert = (message) => alert(message);
-const showConfirm = (message) => window.confirm(message);
-
-const resetFileInput = (event) => {
-  event.target.value = '';
+const formatCodiceFiscale = (cf) => {
+  if (!cf) return '';
+  return cf.toUpperCase().replace(/[^A-Z0-9]/g, '');
 };
 
-const createFileName = (prefix) => {
-  const date = new Date().toISOString().split('T')[0];
-  return `${prefix}_${date}.json`;
+const formatPartitaIva = (piva) => {
+  if (!piva) return '';
+  return piva.replace(/[^0-9]/g, '');
 };
 
-const downloadJSON = (data, fileName) => {
-  const dataStr = JSON.stringify(data, null, 2);
-  const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-  
-  const linkElement = document.createElement('a');
-  linkElement.setAttribute('href', dataUri);
-  linkElement.setAttribute('download', fileName);
-  linkElement.click();
+const validateEmail = (email) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 };
 
-const sanitizeKey = (name) => {
-  return name.toLowerCase().replace(/\s+/g, '_');
+// ===== COMPONENTE MODAL =====
+const Modal = ({ isOpen, onClose, title, children, size = 'medium' }) => {
+  if (!isOpen) return null;
+
+  const sizeClasses = {
+    small: 'max-w-md',
+    medium: 'max-w-2xl',
+    large: 'max-w-4xl'
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+        <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+          <div className="absolute inset-0 bg-gray-500 opacity-75" onClick={onClose}></div>
+        </div>
+        
+        <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+        
+        <div className={`inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle ${sizeClasses[size]} w-full`}>
+          <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg leading-6 font-medium text-gray-900">{title}</h3>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 };
 
-const isValidClient = (client) => {
-  return client && typeof client === 'string' && client.trim();
+// ===== COMPONENTE COPIA TESTO =====
+const CopyableField = ({ label, value }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (value) {
+      navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  if (!value) return null;
+
+  return (
+    <div className="flex items-center justify-between py-1">
+      <div>
+        <span className="text-sm text-gray-500">{label}:</span>
+        <span className="ml-2 text-sm font-medium">{value}</span>
+      </div>
+      <button
+        onClick={handleCopy}
+        className="ml-2 p-1 hover:bg-gray-100 rounded transition-colors"
+        title="Copia"
+      >
+        {copied ? <Check size={16} className="text-green-600" /> : <Copy size={16} className="text-gray-400" />}
+      </button>
+    </div>
+  );
 };
 
 // ===== REDUCER =====
@@ -101,33 +168,29 @@ const dataReducer = (state, action) => {
       
     case 'ADD_CLIENT': {
       const newState = { ...state };
-      newState.clients.push(action.payload);
+      const clientId = action.payload.id;
+      newState.clients[clientId] = action.payload;
+      // Inizializza i dati per il nuovo cliente in tutti i fogli
       Object.keys(newState.sheets).forEach(sheetKey => {
-        newState.sheets[sheetKey].data[action.payload] = {};
+        newState.sheets[sheetKey].data[clientId] = {};
       });
       return newState;
     }
 
-    case 'ADD_MULTIPLE_CLIENTS': {
-      const multiClientState = { ...state };
-      action.payload.forEach(client => {
-        if (!multiClientState.clients.includes(client)) {
-          multiClientState.clients.push(client);
-          Object.keys(multiClientState.sheets).forEach(sheetKey => {
-            multiClientState.sheets[sheetKey].data[client] = {};
-          });
-        }
-      });
-      return multiClientState;
+    case 'UPDATE_CLIENT': {
+      const updatedState = { ...state };
+      updatedState.clients[action.payload.id] = action.payload;
+      return updatedState;
     }
       
     case 'REMOVE_CLIENT': {
-      const updatedState = { ...state };
-      updatedState.clients = updatedState.clients.filter(c => c !== action.payload);
-      Object.keys(updatedState.sheets).forEach(sheetKey => {
-        delete updatedState.sheets[sheetKey].data[action.payload];
+      const removedState = { ...state };
+      delete removedState.clients[action.payload];
+      // Rimuovi i dati del cliente da tutti i fogli
+      Object.keys(removedState.sheets).forEach(sheetKey => {
+        delete removedState.sheets[sheetKey].data[action.payload];
       });
-      return updatedState;
+      return removedState;
     }
       
     case 'ADD_SHEET': {
@@ -138,8 +201,9 @@ const dataReducer = (state, action) => {
         columns: ['Cliente', 'Stato', 'Note'],
         data: {}
       };
-      state.clients.forEach(client => {
-        stateWithNewSheet.sheets[key].data[client] = {};
+      // Inizializza i dati per tutti i clienti
+      Object.keys(state.clients).forEach(clientId => {
+        stateWithNewSheet.sheets[key].data[clientId] = {};
       });
       return stateWithNewSheet;
     }
@@ -151,12 +215,12 @@ const dataReducer = (state, action) => {
     }
       
     case 'UPDATE_CELL': {
-      const { sheetKey, client, column, value } = action.payload;
+      const { sheetKey, clientId, column, value } = action.payload;
       const cellUpdatedState = { ...state };
-      if (!cellUpdatedState.sheets[sheetKey].data[client]) {
-        cellUpdatedState.sheets[sheetKey].data[client] = {};
+      if (!cellUpdatedState.sheets[sheetKey].data[clientId]) {
+        cellUpdatedState.sheets[sheetKey].data[clientId] = {};
       }
-      cellUpdatedState.sheets[sheetKey].data[client][column] = value;
+      cellUpdatedState.sheets[sheetKey].data[clientId][column] = value;
       return cellUpdatedState;
     }
       
@@ -172,8 +236,8 @@ const dataReducer = (state, action) => {
       const columnRemovedState = { ...state };
       const columnToRemove = columnRemovedState.sheets[sheetToUpdate].columns[columnIndex];
       columnRemovedState.sheets[sheetToUpdate].columns.splice(columnIndex, 1);
-      Object.keys(columnRemovedState.sheets[sheetToUpdate].data).forEach(client => {
-        delete columnRemovedState.sheets[sheetToUpdate].data[client][columnToRemove];
+      Object.keys(columnRemovedState.sheets[sheetToUpdate].data).forEach(clientId => {
+        delete columnRemovedState.sheets[sheetToUpdate].data[clientId][columnToRemove];
       });
       return columnRemovedState;
     }
@@ -183,11 +247,11 @@ const dataReducer = (state, action) => {
       const columnUpdatedState = { ...state };
       const colIndex = columnUpdatedState.sheets[sheetForColumn].columns.indexOf(oldName);
       columnUpdatedState.sheets[sheetForColumn].columns[colIndex] = newName;
-      Object.keys(columnUpdatedState.sheets[sheetForColumn].data).forEach(client => {
-        if (columnUpdatedState.sheets[sheetForColumn].data[client][oldName] !== undefined) {
-          columnUpdatedState.sheets[sheetForColumn].data[client][newName] = 
-            columnUpdatedState.sheets[sheetForColumn].data[client][oldName];
-          delete columnUpdatedState.sheets[sheetForColumn].data[client][oldName];
+      Object.keys(columnUpdatedState.sheets[sheetForColumn].data).forEach(clientId => {
+        if (columnUpdatedState.sheets[sheetForColumn].data[clientId][oldName] !== undefined) {
+          columnUpdatedState.sheets[sheetForColumn].data[clientId][newName] = 
+            columnUpdatedState.sheets[sheetForColumn].data[clientId][oldName];
+          delete columnUpdatedState.sheets[sheetForColumn].data[clientId][oldName];
         }
       });
       return columnUpdatedState;
@@ -198,124 +262,380 @@ const dataReducer = (state, action) => {
   }
 };
 
-// ===== COMPONENTI RIUTILIZZABILI =====
-const SaveCancelButtons = ({ onSave, onCancel, saveDisabled = false }) => (
-  <>
-    <button
-      onClick={onSave}
-      disabled={saveDisabled}
-      className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <Save size={16} />
-    </button>
-    <button
-      onClick={onCancel}
-      className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500"
-    >
-      <X size={16} />
-    </button>
-  </>
-);
+// ===== COMPONENTE FORM ANAGRAFICA =====
+const ClientForm = ({ client, onSave, onCancel, isEdit = false }) => {
+  const [formData, setFormData] = useState(client || EMPTY_CLIENT);
+  const [errors, setErrors] = useState({});
 
-const EditableInput = ({ value, onSave, onCancel, placeholder, className = "" }) => {
-  const [inputValue, setInputValue] = useState(value || '');
-  
-  const handleSave = () => {
-    if (inputValue.trim()) {
-      onSave(inputValue.trim());
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    // Clear error when user types
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
-  
+
+  const validate = () => {
+    const newErrors = {};
+    
+    if (!formData.denominazione.trim()) {
+      newErrors.denominazione = 'Campo obbligatorio';
+    }
+    
+    if (formData.tipo === 'persona_fisica' && !formData.codiceFiscale) {
+      newErrors.codiceFiscale = 'Campo obbligatorio per persone fisiche';
+    }
+    
+    if (formData.tipo === 'societa' && !formData.partitaIva) {
+      newErrors.partitaIva = 'Campo obbligatorio per società';
+    }
+    
+    if (formData.email && !validateEmail(formData.email)) {
+      newErrors.email = 'Email non valida';
+    }
+    
+    if (formData.pec && !validateEmail(formData.pec)) {
+      newErrors.pec = 'PEC non valida';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = () => {
+    if (validate()) {
+      const processedData = {
+        ...formData,
+        codiceFiscale: formatCodiceFiscale(formData.codiceFiscale),
+        partitaIva: formatPartitaIva(formData.partitaIva),
+        id: formData.id || Date.now().toString()
+      };
+      onSave(processedData);
+    }
+  };
+
   return (
-    <div className="flex gap-2">
-      <input
-        type="text"
-        value={inputValue}
-        onChange={(e) => setInputValue(e.target.value)}
-        placeholder={placeholder}
-        className={`flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`}
-        onKeyPress={(e) => e.key === 'Enter' && handleSave()}
-        autoFocus
-      />
-      <SaveCancelButtons 
-        onSave={handleSave} 
-        onCancel={onCancel}
-        saveDisabled={!inputValue.trim()}
-      />
+    <div className="space-y-4">
+      {/* Tipo Cliente */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Tipo Cliente
+        </label>
+        <select
+          value={formData.tipo}
+          onChange={(e) => handleChange('tipo', e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="persona_fisica">Persona Fisica</option>
+          <option value="societa">Società</option>
+          <option value="altro">Altro</option>
+        </select>
+      </div>
+
+      {/* Denominazione */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {formData.tipo === 'persona_fisica' ? 'Nome e Cognome' : 'Denominazione'} *
+        </label>
+        <input
+          type="text"
+          value={formData.denominazione}
+          onChange={(e) => handleChange('denominazione', e.target.value)}
+          className={`w-full px-3 py-2 border ${errors.denominazione ? 'border-red-500' : 'border-gray-300'} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
+          placeholder={formData.tipo === 'persona_fisica' ? 'Mario Rossi' : 'Rossi SRL'}
+        />
+        {errors.denominazione && <p className="text-red-500 text-xs mt-1">{errors.denominazione}</p>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Codice Fiscale */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Codice Fiscale {formData.tipo === 'persona_fisica' && '*'}
+          </label>
+          <input
+            type="text"
+            value={formData.codiceFiscale}
+            onChange={(e) => handleChange('codiceFiscale', e.target.value)}
+            className={`w-full px-3 py-2 border ${errors.codiceFiscale ? 'border-red-500' : 'border-gray-300'} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            placeholder="RSSMRA80A01H501A"
+            maxLength="16"
+          />
+          {errors.codiceFiscale && <p className="text-red-500 text-xs mt-1">{errors.codiceFiscale}</p>}
+        </div>
+
+        {/* Partita IVA */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Partita IVA {formData.tipo === 'societa' && '*'}
+          </label>
+          <input
+            type="text"
+            value={formData.partitaIva}
+            onChange={(e) => handleChange('partitaIva', e.target.value)}
+            className={`w-full px-3 py-2 border ${errors.partitaIva ? 'border-red-500' : 'border-gray-300'} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            placeholder="12345678901"
+            maxLength="11"
+          />
+          {errors.partitaIva && <p className="text-red-500 text-xs mt-1">{errors.partitaIva}</p>}
+        </div>
+      </div>
+
+      {/* Indirizzo */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          {formData.tipo === 'persona_fisica' ? 'Residenza' : 'Sede Legale'}
+        </label>
+        <input
+          type="text"
+          value={formData.indirizzo}
+          onChange={(e) => handleChange('indirizzo', e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Via Roma, 1"
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        {/* CAP */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">CAP</label>
+          <input
+            type="text"
+            value={formData.cap}
+            onChange={(e) => handleChange('cap', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="00100"
+            maxLength="5"
+          />
+        </div>
+
+        {/* Città */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Città</label>
+          <input
+            type="text"
+            value={formData.citta}
+            onChange={(e) => handleChange('citta', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Roma"
+          />
+        </div>
+
+        {/* Provincia */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Provincia</label>
+          <input
+            type="text"
+            value={formData.provincia}
+            onChange={(e) => handleChange('provincia', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="RM"
+            maxLength="2"
+          />
+        </div>
+      </div>
+
+      {/* Contatti */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Telefono</label>
+          <input
+            type="tel"
+            value={formData.telefono}
+            onChange={(e) => handleChange('telefono', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="+39 06 1234567"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input
+            type="email"
+            value={formData.email}
+            onChange={(e) => handleChange('email', e.target.value)}
+            className={`w-full px-3 py-2 border ${errors.email ? 'border-red-500' : 'border-gray-300'} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            placeholder="info@esempio.it"
+          />
+          {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+        </div>
+      </div>
+
+      {/* PEC */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">PEC</label>
+        <input
+          type="email"
+          value={formData.pec}
+          onChange={(e) => handleChange('pec', e.target.value)}
+          className={`w-full px-3 py-2 border ${errors.pec ? 'border-red-500' : 'border-gray-300'} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500`}
+          placeholder="azienda@pec.it"
+        />
+        {errors.pec && <p className="text-red-500 text-xs mt-1">{errors.pec}</p>}
+      </div>
+
+      {/* Note */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+        <textarea
+          value={formData.note}
+          onChange={(e) => handleChange('note', e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          rows="3"
+          placeholder="Note aggiuntive..."
+        />
+      </div>
+
+      {/* Bottoni */}
+      <div className="flex justify-end gap-2 pt-4 border-t">
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+        >
+          Annulla
+        </button>
+        <button
+          onClick={handleSubmit}
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
+          {isEdit ? 'Aggiorna' : 'Salva'}
+        </button>
+      </div>
     </div>
   );
 };
 
-const ActionButton = ({ onClick, color, icon: Icon, text, title }) => {
-  const colorClasses = {
-    blue: 'bg-blue-600 hover:bg-blue-700',
-    green: 'bg-green-600 hover:bg-green-700',
-    purple: 'bg-purple-600 hover:bg-purple-700',
-    orange: 'bg-orange-600 hover:bg-orange-700',
-    red: 'bg-red-600 hover:bg-red-700',
-    gray: 'bg-gray-400 hover:bg-gray-500'
-  };
+// ===== COMPONENTE VISUALIZZAZIONE ANAGRAFICA =====
+const ClientView = ({ client, onEdit, onClose }) => {
+  if (!client) return null;
   
-  return (
-    <button
-      onClick={onClick}
-      className={`${colorClasses[color]} text-white px-3 py-2 rounded-md flex items-center gap-2 text-sm`}
-      title={title}
-    >
-      <Icon size={16} />
-      {text}
-    </button>
-  );
-};
+  const getIndirizzoCompleto = () => {
+    const parts = [client.indirizzo, client.cap, client.citta, client.provincia].filter(Boolean);
+    return parts.join(', ');
+  };
 
-const FileInputButton = ({ onChange, color, icon: Icon, text, title }) => {
-  const colorClasses = {
-    blue: 'bg-blue-600 hover:bg-blue-700',
-    orange: 'bg-orange-600 hover:bg-orange-700'
-  };
-  
   return (
-    <label className={`${colorClasses[color]} text-white px-3 py-2 rounded-md flex items-center gap-2 text-sm cursor-pointer`}>
-      <Icon size={16} />
-      {text}
-      <input
-        type="file"
-        accept=".json"
-        onChange={onChange}
-        className="hidden"
-        title={title}
-      />
-    </label>
+    <div className="space-y-4">
+      {/* Header con tipo */}
+      <div className="bg-gray-50 p-4 rounded-lg">
+        <div className="flex items-center gap-2 mb-2">
+          <Building2 className="text-gray-600" size={20} />
+          <span className="text-sm text-gray-600">
+            {client.tipo === 'persona_fisica' ? 'Persona Fisica' : 
+             client.tipo === 'societa' ? 'Società' : 'Altro'}
+          </span>
+        </div>
+        <h2 className="text-xl font-semibold">{client.denominazione}</h2>
+      </div>
+
+      {/* Dati fiscali */}
+      <div className="bg-blue-50 p-4 rounded-lg space-y-2">
+        <h3 className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
+          <FileCheck size={16} />
+          Dati Fiscali
+        </h3>
+        <CopyableField label="Codice Fiscale" value={client.codiceFiscale} />
+        <CopyableField label="Partita IVA" value={client.partitaIva} />
+      </div>
+
+      {/* Sede/Residenza */}
+      {getIndirizzoCompleto() && (
+        <div className="bg-green-50 p-4 rounded-lg">
+          <h3 className="text-sm font-semibold text-green-800 mb-2 flex items-center gap-2">
+            <MapPin size={16} />
+            {client.tipo === 'persona_fisica' ? 'Residenza' : 'Sede Legale'}
+          </h3>
+          <CopyableField label="Indirizzo" value={getIndirizzoCompleto()} />
+        </div>
+      )}
+
+      {/* Contatti */}
+      <div className="bg-purple-50 p-4 rounded-lg space-y-2">
+        <h3 className="text-sm font-semibold text-purple-800 mb-2">Contatti</h3>
+        {client.telefono && (
+          <div className="flex items-center gap-2">
+            <Phone size={14} className="text-gray-500" />
+            <CopyableField label="Telefono" value={client.telefono} />
+          </div>
+        )}
+        {client.email && (
+          <div className="flex items-center gap-2">
+            <Mail size={14} className="text-gray-500" />
+            <CopyableField label="Email" value={client.email} />
+          </div>
+        )}
+        {client.pec && (
+          <div className="flex items-center gap-2">
+            <Mail size={14} className="text-gray-500" />
+            <CopyableField label="PEC" value={client.pec} />
+          </div>
+        )}
+      </div>
+
+      {/* Note */}
+      {client.note && (
+        <div className="bg-yellow-50 p-4 rounded-lg">
+          <h3 className="text-sm font-semibold text-yellow-800 mb-2">Note</h3>
+          <p className="text-sm">{client.note}</p>
+        </div>
+      )}
+
+      {/* Bottoni */}
+      <div className="flex justify-end gap-2 pt-4 border-t">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+        >
+          Chiudi
+        </button>
+        <button
+          onClick={onEdit}
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+        >
+          <Edit3 size={16} />
+          Modifica
+        </button>
+      </div>
+    </div>
   );
 };
 
 // ===== COMPONENTE PRINCIPALE =====
 const GestionaleAdempimenti = () => {
   const [state, dispatch] = useReducer(dataReducer, {
-    clients: [],
+    clients: {},
     sheets: INITIAL_SHEETS
   });
   
   const [activeSheet, setActiveSheet] = useState('dichiarazioni_redditi_2024');
   const [editingCell, setEditingCell] = useState(null);
   const [editingColumn, setEditingColumn] = useState(null);
-  const [showAddClient, setShowAddClient] = useState(false);
-  const [showAddSheet, setShowAddSheet] = useState(false);
   const [showAddColumn, setShowAddColumn] = useState(false);
+  const [showAddSheet, setShowAddSheet] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Stati per modal anagrafica
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [modalMode, setModalMode] = useState('add'); // add, view, edit
+  const [selectedClient, setSelectedClient] = useState(null);
 
-  // Carica dati dal localStorage o inizializza con dati di esempio
+  // Carica dati dal localStorage
   useEffect(() => {
     const savedData = localStorage.getItem(STORAGE_KEY);
     if (savedData) {
       try {
         const parsedData = JSON.parse(savedData);
+        // Assicurati che clients sia sempre un oggetto
+        if (!parsedData.clients) {
+          parsedData.clients = {};
+        }
         dispatch({ type: 'INIT_DATA', payload: parsedData });
       } catch (error) {
         console.error('Errore nel caricamento dei dati:', error);
         dispatch({ 
           type: 'INIT_DATA', 
           payload: {
-            clients: DEFAULT_CLIENTS,
+            clients: {},
             sheets: INITIAL_SHEETS
           }
         });
@@ -324,7 +644,7 @@ const GestionaleAdempimenti = () => {
       dispatch({ 
         type: 'INIT_DATA', 
         payload: {
-          clients: DEFAULT_CLIENTS,
+          clients: {},
           sheets: INITIAL_SHEETS
         }
       });
@@ -333,32 +653,61 @@ const GestionaleAdempimenti = () => {
 
   // Salva i dati nel localStorage quando cambiano
   useEffect(() => {
-    if (state.clients.length > 0 || Object.keys(state.sheets).length > 0) {
+    if (state && state.clients && state.sheets) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
   }, [state]);
 
+  // Filtra clienti in base alla ricerca
+  const filteredClients = Object.entries(state.clients).filter(([id, client]) => {
+    if (!client) return false;
+    const query = searchQuery.toLowerCase();
+    return (
+      (client.denominazione || '').toLowerCase().includes(query) ||
+      (client.codiceFiscale || '').toLowerCase().includes(query) ||
+      (client.partitaIva || '').includes(searchQuery)
+    );
+  });
+
   // ===== GESTIONE CLIENTI =====
-  const addClient = (clientName) => {
-    if (state.clients.includes(clientName)) {
-      showAlert('Cliente già esistente!');
-      return;
-    }
-    dispatch({ type: 'ADD_CLIENT', payload: clientName });
-    setShowAddClient(false);
+  const handleAddClient = () => {
+    setSelectedClient(null);
+    setModalMode('add');
+    setShowClientModal(true);
   };
 
-  const removeClient = (client) => {
-    if (showConfirm(`Sei sicuro di voler eliminare il cliente "${client}"? Questa azione eliminerà tutti i suoi dati.`)) {
-      dispatch({ type: 'REMOVE_CLIENT', payload: client });
+  const handleViewClient = (clientId) => {
+    setSelectedClient(state.clients[clientId]);
+    setModalMode('view');
+    setShowClientModal(true);
+  };
+
+  const handleEditClient = () => {
+    setModalMode('edit');
+  };
+
+  const saveClient = (clientData) => {
+    if (modalMode === 'add') {
+      dispatch({ type: 'ADD_CLIENT', payload: clientData });
+    } else {
+      dispatch({ type: 'UPDATE_CLIENT', payload: clientData });
+    }
+    setShowClientModal(false);
+    setSelectedClient(null);
+  };
+
+  const removeClient = (clientId) => {
+    const client = state.clients[clientId];
+    if (window.confirm(`Sei sicuro di voler eliminare il cliente "${client.denominazione}"? Questa azione eliminerà tutti i suoi dati.`)) {
+      dispatch({ type: 'REMOVE_CLIENT', payload: clientId });
     }
   };
 
   // ===== GESTIONE FOGLI =====
   const addSheet = (sheetName) => {
-    const sheetKey = sanitizeKey(sheetName);
+    const sheetKey = sheetName.toLowerCase().replace(/\s+/g, '_');
     if (state.sheets[sheetKey]) {
-      showAlert('Esiste già un foglio con questo nome!');
+      alert('Esiste già un foglio con questo nome!');
       return;
     }
     dispatch({ type: 'ADD_SHEET', payload: { key: sheetKey, name: sheetName } });
@@ -368,10 +717,10 @@ const GestionaleAdempimenti = () => {
 
   const removeSheet = (sheetKey) => {
     if (Object.keys(state.sheets).length <= 1) {
-      showAlert('Deve rimanere almeno un foglio!');
+      alert('Deve rimanere almeno un foglio!');
       return;
     }
-    if (showConfirm(`Sei sicuro di voler eliminare il foglio "${state.sheets[sheetKey].name}"?`)) {
+    if (window.confirm(`Sei sicuro di voler eliminare il foglio "${state.sheets[sheetKey].name}"?`)) {
       dispatch({ type: 'REMOVE_SHEET', payload: sheetKey });
       if (activeSheet === sheetKey) {
         setActiveSheet(Object.keys(state.sheets)[0]);
@@ -380,10 +729,10 @@ const GestionaleAdempimenti = () => {
   };
 
   // ===== GESTIONE CELLE =====
-  const updateCell = useCallback((sheetKey, client, column, value) => {
+  const updateCell = useCallback((sheetKey, clientId, column, value) => {
     dispatch({ 
       type: 'UPDATE_CELL', 
-      payload: { sheetKey, client, column, value } 
+      payload: { sheetKey, clientId, column, value } 
     });
     setEditingCell(null);
   }, []);
@@ -392,7 +741,7 @@ const GestionaleAdempimenti = () => {
   const addColumn = (columnName) => {
     const currentColumns = state.sheets[activeSheet].columns;
     if (currentColumns.includes(columnName)) {
-      showAlert('Colonna già esistente!');
+      alert('Colonna già esistente!');
       return;
     }
     dispatch({ 
@@ -404,11 +753,11 @@ const GestionaleAdempimenti = () => {
 
   const removeColumn = (columnIndex) => {
     if (columnIndex === 0) {
-      showAlert('La colonna Cliente non può essere eliminata!');
+      alert('La colonna Cliente non può essere eliminata!');
       return;
     }
     const columnName = state.sheets[activeSheet].columns[columnIndex];
-    if (showConfirm(`Sei sicuro di voler eliminare la colonna "${columnName}"?`)) {
+    if (window.confirm(`Sei sicuro di voler eliminare la colonna "${columnName}"?`)) {
       dispatch({ 
         type: 'REMOVE_COLUMN', 
         payload: { sheetKey: activeSheet, columnIndex } 
@@ -418,11 +767,11 @@ const GestionaleAdempimenti = () => {
 
   const updateColumnName = (oldName, newName) => {
     if (oldName === 'Cliente') {
-      showAlert('Il nome della colonna Cliente non può essere modificato!');
+      alert('Il nome della colonna Cliente non può essere modificato!');
       return;
     }
     if (state.sheets[activeSheet].columns.includes(newName) && newName !== oldName) {
-      showAlert('Esiste già una colonna con questo nome!');
+      alert('Esiste già una colonna con questo nome!');
       return;
     }
     dispatch({ 
@@ -432,83 +781,63 @@ const GestionaleAdempimenti = () => {
     setEditingColumn(null);
   };
 
-  // ===== EXPORT FUNCTIONS =====
+  // ===== EXPORT/IMPORT =====
   const exportData = () => {
-    downloadJSON(state, createFileName('gestionale_fiscale'));
+    const dataStr = JSON.stringify(state, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    const exportFileDefaultName = `gestionale_fiscale_${new Date().toISOString().split('T')[0]}.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
   };
 
-  const exportClients = () => {
-    downloadJSON({ clients: state.clients }, createFileName('clienti'));
-  };
-
-  // ===== IMPORT FUNCTIONS =====
-  const parseImportedClients = (data) => {
-    // Supporta sia {"clients": [...]} che array diretto [...]
-    if (data.clients && Array.isArray(data.clients)) {
-      return data.clients;
-    } else if (Array.isArray(data)) {
-      return data;
-    }
-    return null;
-  };
-
-  const importCompleteData = (event) => {
+  const importData = (event) => {
     const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const importedData = JSON.parse(e.target.result);
-        
-        if (importedData.clients && importedData.sheets) {
-          if (showConfirm('Questa operazione sostituirà tutti i dati esistenti. Continuare?')) {
-            dispatch({ type: 'INIT_DATA', payload: importedData });
-            showAlert('Dati completi importati con successo!');
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const importedData = JSON.parse(e.target.result);
+          
+          // Gestione retrocompatibilità: converti vecchio formato clienti (array) in nuovo formato (oggetto)
+          if (importedData.clients && Array.isArray(importedData.clients)) {
+            const clientsObj = {};
+            importedData.clients.forEach(clientName => {
+              const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+              clientsObj[id] = {
+                id: id,
+                denominazione: clientName,
+                tipo: 'persona_fisica',
+                codiceFiscale: '',
+                partitaIva: '',
+                indirizzo: '',
+                cap: '',
+                citta: '',
+                provincia: '',
+                telefono: '',
+                email: '',
+                pec: '',
+                note: ''
+              };
+            });
+            importedData.clients = clientsObj;
           }
-        } else {
-          showAlert('File non valido! Per l\'importazione completa il file deve contenere: {"clients": [...], "sheets": {...}}');
+          
+          if (importedData.clients && importedData.sheets) {
+            dispatch({ type: 'INIT_DATA', payload: importedData });
+            alert('Dati importati con successo!');
+          } else {
+            alert('Formato file non valido!');
+          }
+        } catch (error) {
+          alert('Errore nell\'importazione del file!');
         }
-      } catch (error) {
-        showAlert('Errore nell\'importazione del file! Verifica che sia un JSON valido.');
-      }
-    };
-    reader.readAsText(file);
-    resetFileInput(event);
-  };
-
-  const importClientsOnly = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const importedData = JSON.parse(e.target.result);
-        const clientsToAdd = parseImportedClients(importedData);
-        
-        if (!clientsToAdd) {
-          showAlert('Formato file non valido per l\'importazione clienti!\nFormati supportati:\n- {"clients": ["Cliente1", "Cliente2", ...]}\n- ["Cliente1", "Cliente2", ...]');
-          return;
-        }
-        
-        // Filtra clienti validi e non duplicati
-        const newClients = clientsToAdd
-          .filter(client => isValidClient(client) && !state.clients.includes(client.trim()))
-          .map(client => client.trim());
-        
-        if (newClients.length > 0) {
-          dispatch({ type: 'ADD_MULTIPLE_CLIENTS', payload: newClients });
-          showAlert(`${newClients.length} nuovi clienti importati con successo!`);
-        } else {
-          showAlert('Nessun nuovo cliente da importare (tutti già presenti o non validi).');
-        }
-      } catch (error) {
-        showAlert('Errore nell\'importazione del file! Verifica che sia un JSON valido.');
-      }
-    };
-    reader.readAsText(file);
-    resetFileInput(event);
+      };
+      reader.readAsText(file);
+    }
+    event.target.value = '';
   };
 
   const currentSheet = state.sheets[activeSheet];
@@ -531,79 +860,56 @@ const GestionaleAdempimenti = () => {
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Users size={16} />
-                {state.clients.length} clienti
+                {Object.keys(state.clients).length} clienti
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Calendar size={16} />
                 {Object.keys(state.sheets).length} adempimenti
               </div>
-              <ActionButton
+              <button
                 onClick={exportData}
-                color="green"
-                icon={Download}
-                text="Esporta Tutto"
-                title="Esporta tutti i dati (clienti + fogli)"
-              />
-              <ActionButton
-                onClick={exportClients}
-                color="purple"
-                icon={UserPlus}
-                text="Esporta Clienti"
-                title="Esporta solo la lista clienti"
-              />
-              <FileInputButton
-                onChange={importCompleteData}
-                color="blue"
-                icon={Upload}
-                text="Importa"
-                title="Importa file completo (sostituisce tutti i dati)"
-              />
-              <FileInputButton
-                onChange={importClientsOnly}
-                color="orange"
-                icon={UserPlus}
-                text="Importa Clienti"
-                title="Importa solo clienti (aggiunge ai dati esistenti)"
-              />
+                className="bg-green-600 text-white px-3 py-2 rounded-md hover:bg-green-700 flex items-center gap-2 text-sm"
+                title="Esporta dati"
+              >
+                <Download size={16} />
+                Esporta
+              </button>
+              <label className="bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2 text-sm cursor-pointer">
+                <Upload size={16} />
+                Importa
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={importData}
+                  className="hidden"
+                />
+              </label>
             </div>
           </div>
         </div>
 
-        {/* Gestione Clienti */}
+        {/* Barra Azioni */}
         <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-800">Gestione Clienti</h2>
-            <button
-              onClick={() => setShowAddClient(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2"
-            >
-              <Plus size={16} />
-              Aggiungi Cliente
-            </button>
-          </div>
-          
-          {showAddClient && (
-            <EditableInput
-              placeholder="Nome/Denominazione cliente"
-              onSave={addClient}
-              onCancel={() => setShowAddClient(false)}
-              className="mb-4"
-            />
-          )}
-          
-          <div className="flex flex-wrap gap-2">
-            {state.clients.map((client, index) => (
-              <div key={index} className="bg-gray-100 px-3 py-1 rounded-full flex items-center gap-2">
-                <span className="text-sm">{client}</span>
-                <button
-                  onClick={() => removeClient(client)}
-                  className="text-red-500 hover:text-red-700"
-                  title="Elimina cliente"
-                >
-                  <X size={14} />
-                </button>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4 flex-1">
+              <button
+                onClick={handleAddClient}
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Plus size={16} />
+                Aggiungi Cliente
+              </button>
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cerca cliente per nome, CF o P.IVA..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
-            ))}
+            </div>
           </div>
         </div>
 
@@ -723,67 +1029,54 @@ const GestionaleAdempimenti = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {state.clients.map((client, clientIndex) => (
-                  <tr key={clientIndex} className="hover:bg-gray-50">
-                    {currentSheet.columns.map((column, colIndex) => (
-                      <td key={colIndex} className="px-4 py-3 whitespace-nowrap text-sm">
-                        {colIndex === 0 ? (
-                          <span className="font-medium text-gray-900">{client}</span>
-                        ) : editingCell === `${activeSheet}-${clientIndex}-${colIndex}` ? (
-                          <input
-                            type="text"
-                            defaultValue={currentSheet.data[client]?.[column] || ''}
-                            className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            onKeyPress={(e) => {
-                              if (e.key === 'Enter') {
-                                updateCell(activeSheet, client, column, e.target.value);
-                              }
-                            }}
-                            onBlur={(e) => {
-                              updateCell(activeSheet, client, column, e.target.value);
-                            }}
-                            autoFocus
-                          />
-                        ) : (
-                          <div
-                            onClick={() => setEditingCell(`${activeSheet}-${clientIndex}-${colIndex}`)}
-                            className="cursor-pointer hover:bg-gray-100 p-1 rounded min-h-[24px] min-w-[50px]"
-                          >
-                            {currentSheet.data[client]?.[column] || ''}
-                          </div>
-                        )}
-                      </td>
-                    ))}
+                {filteredClients.length > 0 ? (
+                  filteredClients.map(([clientId, client], clientIndex) => (
+                    <tr key={clientId} className="hover:bg-gray-50">
+                      {currentSheet.columns.map((column, colIndex) => (
+                        <td key={colIndex} className="px-4 py-3 whitespace-nowrap text-sm">
+                          {colIndex === 0 ? (
+                            <button
+                              onClick={() => handleViewClient(clientId)}
+                              className="font-medium text-blue-600 hover:text-blue-800 hover:underline text-left"
+                            >
+                              {client.denominazione}
+                            </button>
+                          ) : editingCell === `${activeSheet}-${clientId}-${colIndex}` ? (
+                            <input
+                              type="text"
+                              defaultValue={currentSheet.data[clientId]?.[column] || ''}
+                              className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  updateCell(activeSheet, clientId, column, e.target.value);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                updateCell(activeSheet, clientId, column, e.target.value);
+                              }}
+                              autoFocus
+                            />
+                          ) : (
+                            <div
+                              onClick={() => setEditingCell(`${activeSheet}-${clientId}-${colIndex}`)}
+                              className="cursor-pointer hover:bg-gray-100 p-1 rounded min-h-[24px] min-w-[50px]"
+                            >
+                              {currentSheet.data[clientId]?.[column] || ''}
+                            </div>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={currentSheet.columns.length} className="px-4 py-8 text-center text-gray-500">
+                      Nessun cliente trovato. Clicca su "Aggiungi Cliente" per iniziare.
+                    </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
-          </div>
-        </div>
-
-        {/* Info Box */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-          <h3 className="text-sm font-semibold text-blue-800 mb-2">💡 Guida Import/Export:</h3>
-          <div className="text-xs text-blue-700 space-y-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <strong className="text-blue-800">📤 Export:</strong>
-                <div className="mt-1 space-y-1">
-                  <div>• <strong>Esporta Tutto:</strong> Backup completo</div>
-                  <div>• <strong>Esporta Clienti:</strong> Solo lista clienti</div>
-                </div>
-              </div>
-              <div>
-                <strong className="text-blue-800">📥 Import:</strong>
-                <div className="mt-1 space-y-1">
-                  <div>• <strong>Importa:</strong> File completo (sostituisce tutto)</div>
-                  <div>• <strong>Importa Clienti:</strong> Aggiunge clienti esistenti</div>
-                </div>
-              </div>
-            </div>
-            <div className="border-t border-blue-200 pt-2 mt-2">
-              <strong>Formati clienti supportati:</strong> {`{"clients": [...]}`} o {`[...]`}
-            </div>
           </div>
         </div>
 
@@ -793,6 +1086,71 @@ const GestionaleAdempimenti = () => {
           <p className="mt-1 text-xs">I dati vengono salvati automaticamente nel browser</p>
         </div>
       </div>
+
+      {/* Modal Anagrafica Cliente */}
+      <Modal
+        isOpen={showClientModal}
+        onClose={() => setShowClientModal(false)}
+        title={
+          modalMode === 'add' ? 'Nuovo Cliente' :
+          modalMode === 'edit' ? 'Modifica Cliente' :
+          'Anagrafica Cliente'
+        }
+        size="large"
+      >
+        {(modalMode === 'add' || modalMode === 'edit') ? (
+          <ClientForm
+            client={selectedClient}
+            onSave={saveClient}
+            onCancel={() => setShowClientModal(false)}
+            isEdit={modalMode === 'edit'}
+          />
+        ) : (
+          <ClientView
+            client={selectedClient}
+            onEdit={handleEditClient}
+            onClose={() => setShowClientModal(false)}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+};
+
+// ===== COMPONENTI HELPER PER INPUT EDITABILE =====
+const EditableInput = ({ value, onSave, onCancel, placeholder, className = "" }) => {
+  const [inputValue, setInputValue] = useState(value || '');
+  
+  const handleSave = () => {
+    if (inputValue.trim()) {
+      onSave(inputValue.trim());
+    }
+  };
+  
+  return (
+    <div className="flex gap-2">
+      <input
+        type="text"
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        placeholder={placeholder}
+        className={`flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`}
+        onKeyPress={(e) => e.key === 'Enter' && handleSave()}
+        autoFocus
+      />
+      <button
+        onClick={handleSave}
+        disabled={!inputValue.trim()}
+        className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <Save size={16} />
+      </button>
+      <button
+        onClick={onCancel}
+        className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500"
+      >
+        <X size={16} />
+      </button>
     </div>
   );
 };
