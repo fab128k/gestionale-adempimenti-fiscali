@@ -322,7 +322,6 @@ const ClientForm = ({ client, onSave, onCancel, isEdit = false }) => {
         partitaIva: formatPartitaIva(formData.partitaIva),
         id: formData.id || (Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9))
       };
-      console.log('Dati cliente processati:', processedData); // Debug
       onSave(processedData);
     }
   };
@@ -519,7 +518,7 @@ const ClientForm = ({ client, onSave, onCancel, isEdit = false }) => {
 };
 
 // ===== COMPONENTE VISUALIZZAZIONE ANAGRAFICA =====
-const ClientView = ({ client, onEdit, onClose }) => {
+const ClientView = ({ client, onEdit, onClose, onDelete }) => {
   if (!client) return null;
   
   const getIndirizzoCompleto = () => {
@@ -594,20 +593,31 @@ const ClientView = ({ client, onEdit, onClose }) => {
       )}
 
       {/* Bottoni */}
-      <div className="flex justify-end gap-2 pt-4 border-t">
+      <div className="flex justify-between pt-4 border-t">
         <button
-          onClick={onClose}
-          className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+          onClick={() => {
+            onClose();
+            setTimeout(() => onDelete(client.id), 100);
+          }}
+          className="px-4 py-2 border border-red-300 text-red-600 rounded-md hover:bg-red-50"
         >
-          Chiudi
+          Elimina Cliente
         </button>
-        <button
-          onClick={onEdit}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
-        >
-          <Edit3 size={16} />
-          Modifica
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Chiudi
+          </button>
+          <button
+            onClick={onEdit}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+          >
+            <Edit3 size={16} />
+            Modifica
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -636,26 +646,67 @@ const GestionaleAdempimenti = () => {
   useEffect(() => {
     try {
       const savedData = localStorage.getItem(STORAGE_KEY);
-      if (savedData) {
-        const parsedData = JSON.parse(savedData);
-        // Assicurati che clients sia sempre un oggetto
-        if (!parsedData.clients) {
-          parsedData.clients = {};
-        }
-        if (!parsedData.sheets) {
-          parsedData.sheets = INITIAL_SHEETS;
-        }
-        dispatch({ type: 'INIT_DATA', payload: parsedData });
-      } else {
-        // Prima volta - inizializza con struttura vuota
+      
+      // Gestisci il caso di localStorage vuoto o corrotto
+      if (!savedData || savedData === '' || savedData === '""') {
+        console.log('localStorage vuoto o corrotto, inizializzo con dati vuoti');
         const initialData = {
           clients: {},
           sheets: INITIAL_SHEETS
         };
         dispatch({ type: 'INIT_DATA', payload: initialData });
-        // Salva immediatamente la struttura iniziale
         localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
+        return;
       }
+      
+      const parsedData = JSON.parse(savedData);
+      
+      // Migrazione automatica: converti clienti stringa in oggetti
+      if (parsedData.clients) {
+        let needsMigration = false;
+        const migratedClients = {};
+        
+        Object.entries(parsedData.clients).forEach(([id, client]) => {
+          if (typeof client === 'string') {
+            // Cliente nel vecchio formato - migra
+            needsMigration = true;
+            migratedClients[id] = {
+              id: id,
+              denominazione: client,
+              tipo: 'persona_fisica',
+              codiceFiscale: '',
+              partitaIva: '',
+              indirizzo: '',
+              cap: '',
+              citta: '',
+              provincia: '',
+              telefono: '',
+              email: '',
+              pec: '',
+              note: ''
+            };
+          } else {
+            // Cliente già nel nuovo formato
+            migratedClients[id] = client;
+          }
+        });
+        
+        if (needsMigration) {
+          console.log('Migrazione clienti dal vecchio formato completata');
+          parsedData.clients = migratedClients;
+        }
+      }
+      
+      // Assicurati che sheets esista
+      if (!parsedData.sheets) {
+        parsedData.sheets = INITIAL_SHEETS;
+      }
+      
+      dispatch({ type: 'INIT_DATA', payload: parsedData });
+      
+      // Salva i dati migrati
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsedData));
+      
     } catch (error) {
       console.error('Errore nel caricamento dei dati:', error);
       const fallbackData = {
@@ -670,7 +721,6 @@ const GestionaleAdempimenti = () => {
   // Salva i dati nel localStorage quando cambiano
   useEffect(() => {
     if (state && state.clients && state.sheets) {
-      console.log('Salvando stato nel localStorage:', state); // Debug
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
   }, [state]);
@@ -679,11 +729,17 @@ const GestionaleAdempimenti = () => {
   const filteredClients = Object.entries(state.clients || {}).filter(([id, client]) => {
     if (!client) return false;
     const query = searchQuery.toLowerCase();
-    return (
-      (client.denominazione || '').toLowerCase().includes(query) ||
-      (client.codiceFiscale || '').toLowerCase().includes(query) ||
-      (client.partitaIva || '').includes(searchQuery)
-    );
+    
+    // Gestisce sia clienti stringa (vecchio formato) che oggetti (nuovo formato)
+    if (typeof client === 'string') {
+      return client.toLowerCase().includes(query);
+    } else {
+      return (
+        (client.denominazione || '').toLowerCase().includes(query) ||
+        (client.codiceFiscale || '').toLowerCase().includes(query) ||
+        (client.partitaIva || '').includes(searchQuery)
+      );
+    }
   });
 
   // ===== GESTIONE CLIENTI =====
@@ -694,7 +750,28 @@ const GestionaleAdempimenti = () => {
   };
 
   const handleViewClient = (clientId) => {
-    setSelectedClient(state.clients[clientId]);
+    let clientData = state.clients[clientId];
+    
+    // Se il cliente è nel vecchio formato (stringa), convertilo in oggetto
+    if (typeof clientData === 'string') {
+      clientData = {
+        id: clientId,
+        denominazione: clientData,
+        tipo: 'persona_fisica',
+        codiceFiscale: '',
+        partitaIva: '',
+        indirizzo: '',
+        cap: '',
+        citta: '',
+        provincia: '',
+        telefono: '',
+        email: '',
+        pec: '',
+        note: ''
+      };
+    }
+    
+    setSelectedClient(clientData);
     setModalMode('view');
     setShowClientModal(true);
   };
@@ -704,7 +781,11 @@ const GestionaleAdempimenti = () => {
   };
 
   const saveClient = (clientData) => {
-    console.log('Salvando cliente:', clientData); // Debug
+    // Se stiamo modificando un cliente vecchio formato, assicurati che l'ID sia corretto
+    if (modalMode === 'edit' && selectedClient && !clientData.id) {
+      clientData.id = selectedClient.id;
+    }
+    
     if (modalMode === 'add') {
       dispatch({ type: 'ADD_CLIENT', payload: clientData });
     } else {
@@ -716,7 +797,11 @@ const GestionaleAdempimenti = () => {
 
   const removeClient = (clientId) => {
     const client = state.clients[clientId];
-    if (window.confirm(`Sei sicuro di voler eliminare il cliente "${client.denominazione}"? Questa azione eliminerà tutti i suoi dati.`)) {
+    if (!client) return;
+    
+    const clientName = typeof client === 'string' ? client : client.denominazione;
+    
+    if (window.confirm(`Sei sicuro di voler eliminare il cliente "${clientName}"? Questa azione eliminerà tutti i suoi dati.`)) {
       dispatch({ type: 'REMOVE_CLIENT', payload: clientId });
     }
   };
@@ -1128,6 +1213,7 @@ const GestionaleAdempimenti = () => {
             client={selectedClient}
             onEdit={handleEditClient}
             onClose={() => setShowClientModal(false)}
+            onDelete={removeClient}
           />
         )}
       </Modal>
