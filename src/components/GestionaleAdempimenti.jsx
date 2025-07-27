@@ -167,14 +167,26 @@ const dataReducer = (state, action) => {
       return action.payload;
       
     case 'ADD_CLIENT': {
-      const newState = { ...state };
       const clientId = action.payload.id;
-      newState.clients[clientId] = action.payload;
+      const newClients = { ...state.clients, [clientId]: action.payload };
+      const newSheets = { ...state.sheets };
+      
       // Inizializza i dati per il nuovo cliente in tutti i fogli
-      Object.keys(newState.sheets).forEach(sheetKey => {
-        newState.sheets[sheetKey].data[clientId] = {};
+      Object.keys(newSheets).forEach(sheetKey => {
+        newSheets[sheetKey] = {
+          ...newSheets[sheetKey],
+          data: {
+            ...newSheets[sheetKey].data,
+            [clientId]: {}
+          }
+        };
       });
-      return newState;
+      
+      return {
+        ...state,
+        clients: newClients,
+        sheets: newSheets
+      };
     }
 
     case 'UPDATE_CLIENT': {
@@ -308,8 +320,9 @@ const ClientForm = ({ client, onSave, onCancel, isEdit = false }) => {
         ...formData,
         codiceFiscale: formatCodiceFiscale(formData.codiceFiscale),
         partitaIva: formatPartitaIva(formData.partitaIva),
-        id: formData.id || Date.now().toString()
+        id: formData.id || (Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9))
       };
+      console.log('Dati cliente processati:', processedData); // Debug
       onSave(processedData);
     }
   };
@@ -621,45 +634,49 @@ const GestionaleAdempimenti = () => {
 
   // Carica dati dal localStorage
   useEffect(() => {
-    const savedData = localStorage.getItem(STORAGE_KEY);
-    if (savedData) {
-      try {
+    try {
+      const savedData = localStorage.getItem(STORAGE_KEY);
+      if (savedData) {
         const parsedData = JSON.parse(savedData);
         // Assicurati che clients sia sempre un oggetto
         if (!parsedData.clients) {
           parsedData.clients = {};
         }
+        if (!parsedData.sheets) {
+          parsedData.sheets = INITIAL_SHEETS;
+        }
         dispatch({ type: 'INIT_DATA', payload: parsedData });
-      } catch (error) {
-        console.error('Errore nel caricamento dei dati:', error);
-        dispatch({ 
-          type: 'INIT_DATA', 
-          payload: {
-            clients: {},
-            sheets: INITIAL_SHEETS
-          }
-        });
-      }
-    } else {
-      dispatch({ 
-        type: 'INIT_DATA', 
-        payload: {
+      } else {
+        // Prima volta - inizializza con struttura vuota
+        const initialData = {
           clients: {},
           sheets: INITIAL_SHEETS
-        }
-      });
+        };
+        dispatch({ type: 'INIT_DATA', payload: initialData });
+        // Salva immediatamente la struttura iniziale
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
+      }
+    } catch (error) {
+      console.error('Errore nel caricamento dei dati:', error);
+      const fallbackData = {
+        clients: {},
+        sheets: INITIAL_SHEETS
+      };
+      dispatch({ type: 'INIT_DATA', payload: fallbackData });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(fallbackData));
     }
   }, []);
 
   // Salva i dati nel localStorage quando cambiano
   useEffect(() => {
     if (state && state.clients && state.sheets) {
+      console.log('Salvando stato nel localStorage:', state); // Debug
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
   }, [state]);
 
   // Filtra clienti in base alla ricerca
-  const filteredClients = Object.entries(state.clients).filter(([id, client]) => {
+  const filteredClients = Object.entries(state.clients || {}).filter(([id, client]) => {
     if (!client) return false;
     const query = searchQuery.toLowerCase();
     return (
@@ -687,6 +704,7 @@ const GestionaleAdempimenti = () => {
   };
 
   const saveClient = (clientData) => {
+    console.log('Salvando cliente:', clientData); // Debug
     if (modalMode === 'add') {
       dispatch({ type: 'ADD_CLIENT', payload: clientData });
     } else {
@@ -860,7 +878,7 @@ const GestionaleAdempimenti = () => {
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Users size={16} />
-                {Object.keys(state.clients).length} clienti
+                {Object.keys(state.clients || {}).length} clienti
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Calendar size={16} />
