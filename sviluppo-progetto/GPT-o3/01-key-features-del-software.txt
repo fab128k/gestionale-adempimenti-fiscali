@@ -1,0 +1,48 @@
+5. Key Feature proposta: “AutoDoc Sync”
+«Il primo motore di raccolta e abbinamento documenti che aggiorna lo stato delle dichiarazioni da solo»
+
+Come funziona
+Smart Inbox multicanale
+Collega PEC, caselle IMAP/G‑mail, canale SDI (via API) e cartelle cloud (Drive, Dropbox).
+L’AI classifica ogni PDF/ZIP in arrivo (F24, CU, 730‑4, ricevute Entratel, ecc.) e lo abbina a: cliente ✔︎ + adempimento ✔︎ + periodo ✔︎.
+
+Stato automatico
+Quando arriva la ricevuta Entratel “OK” l’app marca la dichiarazione come Inviata; se mancano allegati dopo X giorni passa a Bloccata – manca documento Y e invia un reminder al cliente (e a te) in linguaggio naturale.
+
+Task & chatbot
+Un mini‑chatbot (LLM) genera il testo del sollecito in e‑mail, WhatsApp o SMS, con tono professionale ma personalizzato.
+
+Esporta dove vuoi
+CSV/Excel ⟷ API REST: così puoi aggiornare (o far aggiornare) il tuo gestionale attuale senza re‑imputare nulla.
+
+Perché è davvero differenziante
+Cosa fanno gli altri	Cosa faresti tu
+Promemoria statici programmati a calendario	Promemoria dinamici che partono solo se l’AI vede che manca davvero il PDF corretto
+Stato “Inviato” ⇒ spuntatura manuale nel gestionale	Parsing automatico delle ricevute Entratel per cambiare lo stato
+Anagrafica duplicata in più software	Sincronizzazione 1‑click da CSV/API, poi tutto cloud
+
+Perché è sostenibile per un solo sviluppatore
+Stack leggero: Python + FastAPI per le API; Postgres; uno dei modelli open‑source di doc‑classification (LayoutLM/Donut) + chiamate a GPT‑4o per fallback.
+
+Micro‑MVP: parti da LIPE e F24 (poche tipologie di documento), con Gmail/PEC e API SDI. Ogni voce in più (Dichiarazione Redditi, 770, ecc.) è solo una nuova regola di classificazione.
+
+Costo basso: serverless (Railway/Render) + storage S3 compatibile; AI via API a consumo.
+
+6. Prossimi passi concreti
+Validazione rapida – Intervista 5‑10 colleghi (piccoli studi) mostrando mock‑up del cruscotto e chiedendo: «Ti libererebbe tempo? quanto pagheresti al mese?».
+
+Proof‑of‑concept – Script Python che:
+
+legge la tua PEC via IMAP,
+
+riconosce una ricevuta Entratel (checksum + regex),
+
+aggiorna un semplice table “adempimenti” in SQLite.
+
+Landing page – 2‑3 screenshot + waitlist (puoi usare Carrd o Ghost).
+
+Pilot – Condividi accesso con 2 colleghi beta‑tester per il trimestre di settembre‑novembre (periodo ricco di LIPE e 770): metriche = tempo risparmiato vs. Excel.
+
+Itera – Se il test conferma il ROI, aggiungi canali (Drive), poi estendi alle pre‑compilate di maggio.
+
+Bottom‑line: il document‑chasing automatico è oggi il colpo d’occhio mancante nei tool esistenti: uniscilo a un pricing “micro‑studio friendly” (es. 19 €/mese fino a 150 clienti) e hai un posizionamento chiaro e difendibile. Buon sviluppo! 🚀

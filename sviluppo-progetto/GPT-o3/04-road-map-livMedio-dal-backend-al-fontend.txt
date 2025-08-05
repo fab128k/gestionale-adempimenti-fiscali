@@ -1,0 +1,137 @@
+## Road-map “a grana media” — dal backend al frontend
+
+> Obiettivo: costruire il prodotto in modo lineare, riducendo rework e sorprese.
+> Livello di dettaglio: **medio** – ogni punto è “un modulo” o “una fase” che può essere suddivisa in sprint agili da 1-2 settimane.
+
+---
+
+### FASE 0 ‒ Fondamenta
+
+1. **Raccolta requisiti puntuale**
+
+   * Elenco funzionalità “must” (cruscotto, import, smart-inbox, notifiche…).
+   * Classifica: *MVP*, *Post-MVP*, *Nice-to-have*.
+2. **Criteri di successo** (metriche)
+
+   * Tempo medio di onboarding < 10 min.
+   * Riduzione minuti/spesa pratica ≥ X %.
+   * Copertura scadenze LIPE+F24 al lancio.
+
+---
+
+### FASE 1 ‒ Architettura & infrastruttura
+
+| Decisione          | Opzioni da valutare                       |
+| ------------------ | ----------------------------------------- |
+| Linguaggio backend | Python (FastAPI) / Node.js (Nest)         |
+| Database           | Postgres (relazionale + JSONB)            |
+| Storage file       | S3-compatible bucket                      |
+| Hosting            | PaaS (Railway, Render) → poi AWS /GCP     |
+| AI layer           | Open-source model + GPT-fallback (API)    |
+| CI/CD              | GitHub Actions + Docker build/push        |
+| IaC                | Terraform lite o Pulumi (facile rollback) |
+
+---
+
+### FASE 2 ‒ Backend core
+
+1. **Project bootstrap**
+
+   * Repo mono-root (server/ client).
+   * Linter, formatter, test harness.
+2. **Modello dati**
+
+   * *Tenant* → *Cliente* → *Adempimento* → *Documento* → *Evento*.
+   * Versionamento schema (Alembic/Migrations).
+3. **Auth & RBAC**
+
+   * JWT + refresh; ruoli: Owner, Staff, Client.
+4. **Import anagrafiche**
+
+   * Endpoint CSV -> mapper; log di deduplicazione.
+   * Webhook per sync ricorrente.
+5. **Smart Inbox**
+
+   * Connettori: IMAP/PEC, SDI-API, folder watcher.
+   * Pipeline ETL: download → OCR/classify → store → link a cliente/adempimento.
+6. **Motore stato**
+
+   * Regole event-driven (receipts, timer).
+   * FSM semplice: *Nuovo → Attesa docs → In lavorazione → Pronto → Inviato → Errore*.
+7. **Notification service**
+
+   * Queue (Redis/Sidekiq) + providers (email, WhatsApp via Twilio, webhook).
+   * Template AI-assistiti.
+8. **REST/GraphQL API**
+
+   * Versionata; pagination, filtering, webhooks out.
+9. **Reporting & KPI**
+
+   * Query aggregate (materialized views) + export CSV/PDF.
+
+---
+
+### FASE 3 ‒ Frontend
+
+1. **Design system**
+
+   * Tailwind + component library (shadcn/ui).
+   * Storybook per UI isolation.
+2. **Routing & state**
+
+   * React (Vite) + tanstack-query (server state).
+3. **Pagine chiave**
+
+   * Login / Setup wizard.
+   * Dashboard (widget KPI).
+   * Calendar / Kanban scadenze.
+   * Dettaglio cliente + timeline.
+   * Impostazioni integrazioni.
+4. **Real-time updates**
+
+   * WebSocket/SSE per eventi di stato.
+5. **Gestione errori UX**
+
+   * Toast + modale “root cause” (es. token PEC scaduto).
+
+---
+
+### FASE 4 ‒ Qualità, sicurezza, compliance
+
+1. **Test piramide**: unit (70 %) / integration (20 %) / e2e (Playwright 10 %).
+2. **Security hardening**
+
+   * OWASP checks, rate limiting, encryption at-rest.
+   * Audit log immutabile.
+3. **GDPR**
+
+   * DPA, Data-flow mapping, diritto all’oblio.
+4. **Backup & DR**
+
+   * Snapshot DB + object storage replication.
+
+---
+
+### FASE 5 ‒ Deploy & osservabilità
+
+1. **Pipeline CI/CD** → staging → production (manual approval).
+2. **Logging & tracing** (OpenTelemetry + Grafana/Loki).
+3. **Metrics**: tempi API, job queue lag, costi AI request.
+4. **Alerting** (PagerDuty/Telegram bot).
+
+---
+
+### FASE 6 ‒ Pilot & iterazione
+
+1. **Beta privata 2-3 studi**: monitor KPIs, raccolta feedback.
+2. **Refine & harden**: bug-fix, ottimizzazioni performance, UI polish.
+3. **Road-map post-MVP**:
+
+   * Autoupdate calendario fiscale anni successivi.
+   * Integrazione Entratel bidirezionale.
+   * Marketplace plugin (paghe, firma digitale).
+
+---
+
+Seguendo queste fasi sequenziali, mantieni il flusso di sviluppo lineare: ogni blocco completa i prerequisiti per quello successivo, evitando salti avanti-indietro fra backend e frontend e riducendo il debito tecnico lungo la strada.
+

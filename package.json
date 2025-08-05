@@ -1,59 +1,54 @@
 {
   "name": "gestionale-adempimenti-fiscali",
-  "version": "1.0.0",
-  "description": "Applicazione per la gestione delle scadenze e adempimenti fiscali per studi di commercialisti",
-  "homepage": "https://fab128k.github.io/gestionale-adempimenti-fiscali",
+  "version": "2.0.0",
   "private": true,
-  "author": {
-    "name": "Fabrizio Ferrari",
-    "email": "fabrizioferrari7@gmail.com"
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "setup-db": "node scripts/setup-database.js",
+    "generate-types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > types/database.types.ts"
   },
-  "keywords": [
-    "react",
-    "gestionale",
-    "fiscale",
-    "commercialisti",
-    "adempimenti",
-    "scadenze"
-  ],
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "lucide-react": "^0.263.1"
+    "@hello-pangea/dnd": "^16.5.0",
+    "@hookform/resolvers": "^3.3.0",
+    "@radix-ui/react-dialog": "^1.0.5",
+    "@radix-ui/react-dropdown-menu": "^2.0.6",
+    "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-select": "^2.0.0",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-toast": "^1.2.14",
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/ssr": "^0.3.0",
+    "@supabase/supabase-js": "^2.53.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^0.2.0",
+    "date-fns": "^3.3.0",
+    "framer-motion": "^11.0.0",
+    "lucide-react": "^0.263.1",
+    "next": "14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "react-hook-form": "^7.50.0",
+    "recharts": "^2.12.0",
+    "tailwind-merge": "^2.6.0",
+    "zod": "^3.22.0"
   },
   "devDependencies": {
+    "@types/node": "^20.11.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "@vitejs/plugin-react": "^4.0.0",
-    "autoprefixer": "^10.4.14",
-    "gh-pages": "^5.0.0",
-    "postcss": "^8.4.24",
-    "tailwindcss": "^3.3.2",
-    "vite": "^4.3.9"
-  },
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "autoprefixer": "^10.4.0",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "14.2.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5.3.0"
   }
 }
