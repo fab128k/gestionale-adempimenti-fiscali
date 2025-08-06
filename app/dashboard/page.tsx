@@ -85,8 +85,8 @@ export default function DashboardPage() {
                 Benvenuto nel tuo Gestionale Fiscale!
               </h2>
               <p className="text-gray-600">
-                L'autenticazione con GitHub è stata configurata con successo. 
-                Ora puoi iniziare a utilizzare l'applicazione.
+                L&apos;autenticazione con GitHub è stata configurata con successo. 
+                Ora puoi iniziare a utilizzare l&apos;applicazione.
               </p>
             </div>
           </div>
