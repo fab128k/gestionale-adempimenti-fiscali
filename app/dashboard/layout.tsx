@@ -1,22 +1,25 @@
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
+// ============================================
+// 3. DASHBOARD LAYOUT
+// app/dashboard/layout.tsx
+// ============================================
 
-export default async function DashboardLayout({
-  children,
+import { Sidebar } from '@/components/layout/sidebar'
+import { Header } from '@/components/layout/header'
+
+export default function DashboardLayout({
+  children
 }: {
   children: React.ReactNode
 }) {
-  const supabase = createServerComponentClient({ cookies })
-  const { data: { session } } = await supabase.auth.getSession()
-  
-  if (!session) {
-    redirect('/auth/login')
-  }
-  
   return (
-    <div className="min-h-screen bg-gray-50">
-      {children}
+    <div className="flex h-screen bg-gray-50">
+      <Sidebar />
+      <div className="flex-1 flex flex-col">
+        <Header />
+        <main className="flex-1 overflow-auto">
+          {children}
+        </main>
+      </div>
     </div>
   )
 }
