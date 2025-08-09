@@ -1,5 +1,5 @@
 // ============================================
-// 1. STATS GRID COMPONENT
+// 1. STATS GRID COMPONENT - VERSIONE CORRETTA
 // components/dashboard/stats-grid.tsx
 // ============================================
 
@@ -71,41 +71,54 @@ export function StatsGrid() {
         { event: '*', schema: 'public', table: 'deadlines' },
         () => fetchStats()
       )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'clients' },
+        () => fetchStats()
+      )
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [supabase])
 
   const fetchStats = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // Fetch all stats in parallel
-      const [deadlines, clients] = await Promise.all([
-        supabase.from('deadlines').select('*').eq('user_id', user.id),
-        supabase.from('clients').select('count').eq('user_id', user.id)
+      // Fetch all stats in parallel with correct queries
+      const [deadlinesResult, clientsResult] = await Promise.all([
+        supabase
+          .from('deadlines')
+          .select('*')
+          .eq('user_id', user.id),
+        supabase
+          .from('clients')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
       ])
 
+      const deadlines = deadlinesResult.data || []
+      const clientCount = clientsResult.count || 0
+
       const now = new Date()
-      const stats = {
-        total: deadlines.data?.length || 0,
-        pending: deadlines.data?.filter(d => d.status === 'pending').length || 0,
-        overdue: deadlines.data?.filter(d => 
+      const calculatedStats = {
+        total: deadlines.length,
+        pending: deadlines.filter(d => d.status === 'pending').length,
+        overdue: deadlines.filter(d => 
           d.status === 'pending' && new Date(d.due_date) < now
-        ).length || 0,
-        completed: deadlines.data?.filter(d => d.status === 'completed').length || 0,
-        clients: clients.data?.[0]?.count || 0,
-        thisMonth: deadlines.data?.filter(d => {
+        ).length,
+        completed: deadlines.filter(d => d.status === 'completed').length,
+        clients: clientCount,
+        thisMonth: deadlines.filter(d => {
           const dueDate = new Date(d.due_date)
           return dueDate.getMonth() === now.getMonth() && 
                  dueDate.getFullYear() === now.getFullYear()
-        }).length || 0
+        }).length
       }
 
-      setStats(stats)
+      setStats(calculatedStats)
     } catch (error) {
       console.error('Error fetching stats:', error)
     } finally {
@@ -114,11 +127,23 @@ export function StatsGrid() {
   }
 
   if (loading) {
-    return <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 animate-pulse">
-      {[...Array(6)].map((_, i) => (
-        <Card key={i} className="h-32 bg-gray-100" />
-      ))}
-    </div>
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        {[...Array(6)].map((_, i) => (
+          <Card key={i} className="h-32">
+            <div className="animate-pulse">
+              <CardHeader className="pb-2">
+                <div className="h-4 bg-gray-200 rounded w-20" />
+              </CardHeader>
+              <CardContent>
+                <div className="h-8 bg-gray-200 rounded w-16 mb-2" />
+                <div className="h-3 bg-gray-200 rounded w-24" />
+              </CardContent>
+            </div>
+          </Card>
+        ))}
+      </div>
+    )
   }
 
   return (
@@ -149,7 +174,7 @@ export function StatsGrid() {
         value={stats.completed}
         icon={CheckCircle}
         color="green"
-        change={`${Math.round((stats.completed / stats.total) * 100) || 0}% del totale`}
+        change={`${Math.round((stats.completed / (stats.total || 1)) * 100)}% del totale`}
       />
       <StatCard
         title="Clienti"

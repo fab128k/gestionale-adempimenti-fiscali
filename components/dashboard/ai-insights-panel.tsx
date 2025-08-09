@@ -1,5 +1,5 @@
 // ============================================
-// 2. AI INSIGHTS PANEL
+// 2. AI INSIGHTS PANEL - VERSIONE CORRETTA
 // components/dashboard/ai-insights-panel.tsx
 // ============================================
 
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Zap, AlertTriangle, Clock, TrendingUp, ChevronRight, Sparkles } from 'lucide-react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cn } from '@/lib/utils'
+import { useRouter } from 'next/navigation'
 
 interface Insight {
   id: string
@@ -40,6 +41,13 @@ const colorMap = {
 
 function InsightItem({ insight }: { insight: Insight }) {
   const Icon = iconMap[insight.type]
+  const router = useRouter()
+  
+  const handleAction = () => {
+    if (insight.action?.href) {
+      router.push(insight.action.href)
+    }
+  }
   
   return (
     <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
@@ -54,6 +62,7 @@ function InsightItem({ insight }: { insight: Insight }) {
             variant="ghost"
             size="sm"
             className="mt-2 h-7 text-xs"
+            onClick={handleAction}
           >
             {insight.action.label}
             <ChevronRight className="ml-1 h-3 w-3" />
@@ -71,7 +80,20 @@ export function AIInsightsPanel() {
 
   useEffect(() => {
     generateInsights()
-  }, [])
+    
+    // Setup realtime subscription for dynamic insights
+    const channel = supabase
+      .channel('insights-updates')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'deadlines' },
+        () => generateInsights()
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [supabase])
 
   const generateInsights = async () => {
     try {
@@ -79,11 +101,16 @@ export function AIInsightsPanel() {
       if (!user) return
 
       // Fetch data for insights
-      const { data: deadlines } = await supabase
+      const { data: deadlines, error } = await supabase
         .from('deadlines')
-        .select('*, client:clients(*)')
+        .select(`
+          *,
+          client:clients(*)
+        `)
         .eq('user_id', user.id)
         .order('due_date', { ascending: true })
+
+      if (error) throw error
 
       const now = new Date()
       const insights: Insight[] = []
@@ -97,8 +124,8 @@ export function AIInsightsPanel() {
         insights.push({
           id: '1',
           type: 'urgent',
-          title: `${overdue.length} scadenze non rispettate`,
-          description: `Hai ${overdue.length} scadenze scadute che richiedono attenzione immediata.`,
+          title: `${overdue.length} scadenz${overdue.length === 1 ? 'a' : 'e'} non rispettat${overdue.length === 1 ? 'a' : 'e'}`,
+          description: `Hai ${overdue.length} scadenz${overdue.length === 1 ? 'a' : 'e'} scadut${overdue.length === 1 ? 'a' : 'e'} che richiede${overdue.length === 1 ? '' : 'ono'} attenzione immediata.`,
           action: {
             label: 'Visualizza scadenze',
             href: '/dashboard/scadenze?filter=overdue'
@@ -118,7 +145,7 @@ export function AIInsightsPanel() {
         insights.push({
           id: '2',
           type: 'warning',
-          title: `${upcoming.length} scadenze nei prossimi 7 giorni`,
+          title: `${upcoming.length} scadenz${upcoming.length === 1 ? 'a' : 'e'} nei prossimi 7 giorni`,
           description: 'Pianifica il tuo tempo per completare queste attività.',
           action: {
             label: 'Pianifica ora',
@@ -128,29 +155,62 @@ export function AIInsightsPanel() {
         })
       }
 
-      // Productivity tip
+      // Productivity trend
       const completedThisMonth = deadlines?.filter(d => {
-        const completed = d.completed_at ? new Date(d.completed_at) : null
-        return completed && 
-               completed.getMonth() === now.getMonth() && 
-               completed.getFullYear() === now.getFullYear()
+        if (d.status !== 'completed') return false
+        const updatedDate = new Date(d.updated_at)
+        return updatedDate.getMonth() === now.getMonth() && 
+               updatedDate.getFullYear() === now.getFullYear()
       }).length || 0
 
+      const completedLastMonth = deadlines?.filter(d => {
+        if (d.status !== 'completed') return false
+        const updatedDate = new Date(d.updated_at)
+        const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        return updatedDate.getMonth() === lastMonth.getMonth() && 
+               updatedDate.getFullYear() === lastMonth.getFullYear()
+      }).length || 0
+
+      if (completedThisMonth > 0 || completedLastMonth > 0) {
+        const trend = completedThisMonth >= completedLastMonth ? 'positivo' : 'in calo'
+        insights.push({
+          id: '3',
+          type: 'trend',
+          title: `Trend produttività ${trend}`,
+          description: `Hai completato ${completedThisMonth} scadenz${completedThisMonth === 1 ? 'a' : 'e'} questo mese${completedLastMonth > 0 ? ` (vs ${completedLastMonth} il mese scorso)` : ''}.`,
+          priority: 3
+        })
+      }
+
+      // Productivity tip
+      const hasKanbanView = deadlines && deadlines.length > 5
       insights.push({
-        id: '3',
+        id: '4',
         type: 'tip',
         title: 'Suggerimento produttività',
-        description: completedThisMonth > 10 
-          ? `Ottimo lavoro! Hai completato ${completedThisMonth} scadenze questo mese.`
-          : 'Prova la vista Kanban per organizzare meglio il tuo workflow.',
+        description: hasKanbanView
+          ? 'Prova la vista Kanban per organizzare meglio il tuo workflow.'
+          : 'Aggiungi più scadenze per sbloccare visualizzazioni avanzate.',
+        action: hasKanbanView ? {
+          label: 'Vai a Kanban',
+          href: '/dashboard/scadenze/kanban'
+        } : undefined,
         priority: 4
       })
 
-      // Sort by priority
+      // Sort by priority and limit to 4
       insights.sort((a, b) => a.priority - b.priority)
-      setInsights(insights.slice(0, 4)) // Max 4 insights
+      setInsights(insights.slice(0, 4))
     } catch (error) {
       console.error('Error generating insights:', error)
+      // Set fallback insights on error
+      setInsights([{
+        id: 'fallback',
+        type: 'tip',
+        title: 'Benvenuto!',
+        description: 'Inizia aggiungendo i tuoi clienti e le scadenze per vedere insights personalizzati.',
+        priority: 1
+      }])
     } finally {
       setLoading(false)
     }
@@ -168,7 +228,13 @@ export function AIInsightsPanel() {
         <CardContent>
           <div className="space-y-3">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-20 bg-white/50 rounded-lg animate-pulse" />
+              <div key={i} className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-white/50 rounded-lg animate-pulse" />
+                <div className="flex-1">
+                  <div className="h-4 bg-white/50 rounded w-3/4 mb-2 animate-pulse" />
+                  <div className="h-3 bg-white/50 rounded w-full animate-pulse" />
+                </div>
+              </div>
             ))}
           </div>
         </CardContent>
