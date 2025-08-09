@@ -21,7 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Kanban,
-  Grid3x3,
+  LayoutGrid,
   Clock
 } from 'lucide-react'
 
@@ -36,7 +36,7 @@ const navigation = [
     href: '/dashboard/scadenze',
     icon: Clock,
     children: [
-      { name: 'Vista Griglia', href: '/dashboard/scadenze/grid', icon: Grid3x3 },
+      { name: 'Vista Griglia', href: '/dashboard/scadenze/grid', icon: LayoutGrid },
       { name: 'Vista Kanban', href: '/dashboard/scadenze/kanban', icon: Kanban },
       { name: 'Calendario', href: '/dashboard/scadenze/calendar', icon: Calendar }
     ]
